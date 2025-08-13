@@ -1,62 +1,84 @@
-# Student Enrollment Forecasting with Moirai & Streamlit
+# Student Enrollment Forecasting with Moirai, Auto Models & Streamlit
 
-This project aims to predict student enrollment trends using time series forecasting models. It leverages the **Moirai** library for forecasting and provides a **Streamlit** web interface for visualization. The dataset is based on Google Trends  (`ts_wide.csv`).
+This project predicts student enrollment trends using advanced time series forecasting techniques.  
+It includes:
+- **Moirai** models for accurate and robust forecasting.
+- **Auto model pipeline** for automated model selection and hyperparameter tuning.
+- **Streamlit web app** for interactive visualization and trend exploration.
 
-## Project Structure
+The dataset is derived from **Google Trends** search interest data (`ts_wide.csv`).
 
-```
-├── moirai.yml             # Conda environment configuration
-├── sample_moirai.py       # Sample script using Moirai for time series forecasting
-├── streamlit_app.py       # Streamlit dashboard for visualization
-├── ts_wide.csv            # Google Trends-based time series data
-└── README.md              # Project documentation
-```
+---
+
+##  Project Structure
+
+├── moirai.yml # Conda environment configuration
+├── sample_moirai.py # Sample script using Moirai for time series forecasting
+├── auto_model.py # Automated forecasting pipeline
+├── streamlit_app.py # Streamlit dashboard for visualization
+├── ts_wide.csv # Google Trends-based time series data
+└── README.md # Project documentation
 
 
 ---
 
 ##  Installation
 
-### Create and activate the conda environment
-
+1. **Create and activate the Conda environment**
 ```bash
 conda env create -f moirai.yml
 conda activate PhD_Moirai
-```
+Install additional dependencies (if not already included)
 
+
+pip install streamlit pandas numpy matplotlib plotly
 ## Data
+The dataset ts_wide.csv contains Google Trends search interest data for enrollment-related queries.
+It is in a wide-format time series structure, where each column is a separate query/topic, and rows represent time steps.
 
-The dataset `ts_wide.csv` 
 ## Usage
-
-### 1. Run the sample forecasting script
-
-```bash
+## 1️ Run the Moirai forecasting script
+bash
 python sample_moirai.py
-```
+Loads historical enrollment-related data.
 
-This will generate model outputs using Moirai on the `ts_wide.csv` dataset.
+Trains a Moirai time series model.
 
-### 2. Run the Streamlit dashboard
+Outputs predictions and evaluation metrics.
 
-```bash
+## 2️ Run the Auto Model pipeline
+bash
+python auto_model.py
+Automatically selects the best forecasting algorithm.
+
+Performs hyperparameter tuning.
+
+Saves the best model and predictions.
+
+## 3️ Run the Streamlit dashboard
+
 streamlit run streamlit_app.py
-```
+Launches an interactive web app at http://localhost:8501/.
 
-This will launch an interactive web app at http://localhost:8501/ where you can visualize trends and forecasts.
 
 ## Example Forecasting Output
 
-![Forecast Output 1](images/forecast_plot_1.png)
-![Forecast Output 2](images/forecast_plot_2.png)
+![Forecast Output 1](images/forecast_plot_3.png)
+![Forecast Output 2](images/forecast_plot_4.png)
+![Forecast Output 2](images/forecast_plot_5.png)
 
 ## Requirements
+Python 3.13
 
-- Python 3.13
-- Conda
-- Streamlit
-- Moirai
-- Pandas, NumPy
+Conda
+
+Moirai
+
+Pandas, NumPy
+
+Streamlit
+
+Matplotlib, Plotly
 
 
 ## Author
