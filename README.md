@@ -15,7 +15,6 @@ The dataset is derived from **Google Trends** search interest data (`ts_wide.csv
 ```
 ├── moirai.yml               # Conda environment configuration
 ├── sample_moirai.py         # Sample script using Moirai for time series forecasting
-├── auto_model.py            # Automated forecasting pipeline
 ├── streamlit_app.py         # Streamlit dashboard for visualization
 ├── autoarima_forecast.py    # Auto ARIMA forecasting script
 ├── ts_wide.csv              # Google Trends-based time series data
@@ -57,22 +56,15 @@ python sample_moirai.py
 - Trains a Moirai time series model.
 - Outputs predictions and evaluation metrics.
 
-### 2️ Run the Auto Model pipeline
-```bash
-python auto_model.py
-```
-- Automatically selects the best forecasting algorithm.
-- Performs hyperparameter tuning.
-- Saves the best model and predictions.
 
-### 3️ Run the Auto ARIMA forecasting script
+### 2 Run the Auto ARIMA forecasting script
 ```bash
 python autoarima_forecast.py
 ```
 - Uses Auto ARIMA for quick forecasting.
 - Saves forecast results and plots.
 
-### 4️ Run the Streamlit dashboard
+### 3 Run the Streamlit dashboard
 ```bash
 streamlit run streamlit_app.py
 ```
