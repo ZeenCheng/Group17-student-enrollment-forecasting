@@ -30,7 +30,7 @@ st.title("Moirai / AutoARIMA / Chronos Forecast App")
 # ----------------------------
 st.sidebar.title("Configuration")
 
-model_choice = st.sidebar.selectbox("Select Model", ["moirai", "moirai-moe", "AutoARIMA", "Chronos"])
+model_choice = st.sidebar.selectbox("Select Model", ["moirai", "moirai-moe", "AutoARIMA", "AutoARIMA-expanding", "Chronos", "Chronos-expanding", "Multi-model Forecast Comparison"])
 size_choice = st.sidebar.selectbox("Model Size", ["small", "base", "large"])
 prediction_length = st.sidebar.slider("Prediction Length", 4, 52, 20)
 initial_context_length = st.sidebar.slider("Initial Context Length", 20, 500, 100)
@@ -104,15 +104,163 @@ if model_choice == "AutoARIMA":
     st.subheader("AutoARIMA Forecast Values (test period)")
     st.dataframe(forecast_df.set_index("ds"))
 
+
+# ----------------------------
+# AutoARIMA-expanding branch
+# ----------------------------
+elif model_choice == "AutoARIMA-expanding":
+    st.write("### Running AutoARIMA (Expanding-window evaluation)")
+    from autoarima_expanding import run_autoarima_expanding_forecast
+
+    with st.spinner("Running AutoARIMA expanding-window evaluation..."):
+        try:
+            metrics, forecast_df, meta = run_autoarima_expanding_forecast(
+                df,
+                series_col=None,
+                prediction_length=prediction_length,
+                initial_train=initial_context_length,
+                step=prediction_length,
+                seasonal=False,          # 需要季节性可改 True
+                stepwise=True,
+                suppress_warnings=True,
+                error_action="ignore",
+                alpha=0.05,              # 95% 置信区间
+            )
+        except Exception as e:
+            st.error(f"AutoARIMA expanding-window evaluation failed: {e}")
+            st.stop()
+
+    # 指标
+    st.subheader("AutoARIMA Expanding Metrics")
+    st.json(metrics)
+
+    # 结果表
+    st.subheader("AutoARIMA Expanding Forecast Values (head)")
+    st.dataframe(forecast_df.head(50))
+
+    # -------------------------
+    # 绘图：Actual + 连续预测 + 阴影
+    # -------------------------
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    fig, ax = plt.subplots(figsize=(12, 5))
+
+    # 真实值
+    ax.plot(df.index, df.iloc[:, 0].astype(float).values, label="Actual", color="black")
+
+    # 拼接所有窗口的预测均值与 std
+    preds_all = []
+    std_all = []
+    for w_start, pred_mean, pred_std, true_vals in meta:
+        preds_all.extend(pred_mean.tolist())
+        std_all.extend(pred_std.tolist())
+
+    preds_all = np.asarray(preds_all, dtype=float)
+    std_all = np.asarray(std_all, dtype=float)
+
+    # 与 forecast_df 对齐（稳妥起见）
+    L = len(forecast_df)
+    if len(preds_all) > L:
+        preds_all = preds_all[:L]
+        std_all = std_all[:L]
+    elif len(preds_all) < L:
+        pad = L - len(preds_all)
+        preds_all = np.pad(preds_all, (0, pad), mode="edge")
+        std_all = np.pad(std_all, (0, pad), mode="edge")
+
+    # 连续预测曲线
+    ax.plot(
+        forecast_df["ds"],
+        preds_all,
+        label="AutoARIMA_expanding (all windows)",
+        color="orange",
+    )
+
+    # 阴影：mean ± std （std 由CI换算得到）
+    ax.fill_between(
+        forecast_df["ds"],
+        preds_all - std_all,
+        preds_all + std_all,
+        color="orange",
+        alpha=0.2,
+    )
+
+    ax.set_title("AutoARIMA Expanding Forecast (All Windows)")
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Value")
+    ax.legend()
+    ax.grid(True)
+    plt.xticks(rotation=45)
+
+    st.pyplot(fig)
+
+    # -------------------------
+    # 下载 CSV
+    # -------------------------
+    import io
+    towrite = io.BytesIO()
+    forecast_df.to_csv(towrite, index=False, encoding="utf-8-sig")
+    towrite.seek(0)
+    st.download_button(
+        "Download AutoARIMA Expanding predictions CSV",
+        towrite,
+        file_name="autoarima_expanding_preds.csv",
+        mime="text/csv"
+    )
+
+
+
 # ----------------------------
 # Chronos branch
 # ----------------------------
 elif model_choice == "Chronos":
+    st.write("### Running Chronos (Simple rolling forecast)")
+    from Chronos import run_chronos_forecast
+
+    with st.spinner("Forecasting with Chronos..."):
+        try:
+            forecast_df, fig_chronos = run_chronos_forecast(
+                df,
+                series_col=None,
+                prediction_length=prediction_length,
+                test_len=test_len,
+                model_name=chronos_model_name,
+                device=None,
+            )
+        except Exception as e:
+            st.error(f"Chronos forecast failed: {e}")
+            st.stop()
+
+    st.subheader("Chronos Forecast Plot")
+    st.pyplot(fig_chronos)
+
+    st.subheader("Chronos Forecast Values (test period)")
+    st.dataframe(forecast_df.set_index("ds"))
+
+    # 下载按钮
+    towrite = io.BytesIO()
+    forecast_df.to_csv(towrite, index=False, encoding="utf-8-sig")
+    towrite.seek(0)
+    st.download_button(
+        "Download Chronos predictions CSV",
+        towrite,
+        file_name="chronos_preds.csv",
+        mime="text/csv"
+    )
+
+# ----------------------------
+# Chronos-expanding branch
+# ----------------------------
+elif model_choice == "Chronos-expanding":
     st.write("### Running Chronos (Expanding-window evaluation)")
+    from Chronos_expanding import run_chronos_expanding_forecast
+
     with st.spinner("Running Chronos expanding-window evaluation..."):
         try:
-            metrics, out_df, meta = chronos_model.expanding_window_forecast(
+            metrics, forecast_df, meta = run_chronos_expanding_forecast(
                 df,
+                series_col=None,
                 prediction_length=prediction_length,
                 initial_train=initial_context_length,
                 step=prediction_length,
@@ -123,190 +271,285 @@ elif model_choice == "Chronos":
             st.error(f"Chronos expanding-window evaluation failed: {e}")
             st.stop()
 
-    st.subheader("Chronos metrics")
+    # 显示指标
+    st.subheader("Chronos Expanding Metrics")
     st.json(metrics)
-    st.subheader("Predictions vs True (head)")
-    st.dataframe(out_df.head(50))
+
+    # 显示前50行预测值
+    st.subheader("Chronos Expanding Forecast Values (head)")
+    st.dataframe(forecast_df.head(50))
+
+    # -------------------------
+    # 绘图：所有窗口的连续预测曲线
+    # -------------------------
+    import matplotlib.pyplot as plt
+    import numpy as np
 
     fig, ax = plt.subplots(figsize=(12, 5))
-    ax.plot(df.index, df.iloc[:, 0].astype(float).values, label="Actual")
-    last_wend, last_pred, last_true = meta[-1]
-    pred_idx = df.index[last_wend:last_wend + prediction_length]
-    ax.plot(pred_idx, last_pred, label="Chronos_pred (last window)", marker="o")
-    ax.legend()
-    st.pyplot(fig)
 
-    towrite = io.BytesIO()
-    out_df.to_csv(towrite, index=False, encoding="utf-8-sig")
-    towrite.seek(0)
-    st.download_button("Download Chronos predictions CSV", towrite, file_name="chronos_expanding_preds.csv", mime="text/csv")
+    # 真实值
+    ax.plot(df.index, df.iloc[:, 0].astype(float).values, label="Actual", color="black")
 
-# ----------------------------
-# Moirai / Moirai-MoE expanding window branch
-# ----------------------------
-else:
-    st.write("### Moirai Dynamic Expanding Window Forecast")
+    # 所有窗口预测
+    preds_all = []
+    for w_start, pred_samples, true_vals in meta:
+        pred_mean = np.mean(pred_samples, axis=0)  # 平均值作为预测曲线
+        preds_all.extend(pred_mean)
 
-    ds = PandasDataset(dict(df))
+    # 绘制预测曲线
+    ax.plot(forecast_df['ds'], preds_all, label="Chronos_expanding (all windows)", color="orange")
 
-    # load model
-    st.write("### Loading model...")
-    with st.spinner("Downloading and initializing model..."):
-        if model_choice == "moirai":
-            model = MoiraiForecast(
-                module=MoiraiModule.from_pretrained(f"Salesforce/moirai-1.1-R-{size_choice}"),
-                prediction_length=prediction_length,
-                context_length=max_context_length,
-                patch_size="auto",
-                num_samples=100,
-                target_dim=1,
-                feat_dynamic_real_dim=ds.num_feat_dynamic_real,
-                past_feat_dynamic_real_dim=ds.num_past_feat_dynamic_real,
-            )
-        else:
-            model = MoiraiMoEForecast(
-                module=MoiraiMoEModule.from_pretrained(f"Salesforce/moirai-moe-1.0-R-{size_choice}"),
-                prediction_length=prediction_length,
-                context_length=max_context_length,
-                patch_size=16,
-                num_samples=100,
-                target_dim=1,
-                feat_dynamic_real_dim=ds.num_feat_dynamic_real,
-                past_feat_dynamic_real_dim=ds.num_past_feat_dynamic_real,
-            )
+    # 可选：绘制预测不确定性阴影
+    all_preds = np.concatenate([p for _, p, _ in meta], axis=0)
+    pred_std = np.std(all_preds, axis=0)
+    # 如果长度对不上 forecast_df，则截断或填充
+    if len(pred_std) > len(forecast_df):
+        pred_std = pred_std[:len(forecast_df)]
+    elif len(pred_std) < len(forecast_df):
+        pred_std = np.pad(pred_std, (0, len(forecast_df)-len(pred_std)), mode='edge')
 
-    predictor = model.create_predictor(batch_size=batch_size)
-
-    windows = test_len // prediction_length
-    all_forecasts, all_labels, all_inputs = [], [], []
-    metrics_data = []
-
-    for w in range(windows):
-        current_ctx = min(initial_context_length + w * prediction_length, max_context_length)
-        offset = -(test_len - w * prediction_length)
-
-        # split dataset for current window
-        train_w, test_w = split(ds, offset=offset)
-
-        # generate one instance for current window (no context_length param here!)
-        instances = test_w.generate_instances(
-            prediction_length=prediction_length,
-            windows=1,
-            distance=1,
-        )
-        instance_list = list(instances)
-        if len(instance_list) == 0:
-            st.warning(f"No instance generated for window {w+1}")
-            continue
-
-        input_data, label_data = instance_list[0]
-
-        # 截断上下文长度
-        if "past_target" in input_data:
-            input_data["past_target"] = input_data["past_target"][-current_ctx:]
-        if "past_feat_dynamic_real" in input_data and input_data["past_feat_dynamic_real"] is not None:
-            input_data["past_feat_dynamic_real"] = input_data["past_feat_dynamic_real"][:, -current_ctx:]
-
-        # 预测
-        forecast = next(predictor.predict([input_data]))
-
-        # 取出真实值数组
-        true_vals = np.array(label_data["target"], dtype=float)
-        pred_vals = forecast.samples.mean(axis=0).squeeze()
-
-        all_forecasts.append(forecast)
-        all_labels.append(true_vals)
-        all_inputs.append(input_data)
-
-        # 计算误差指标
-        mae = mean_absolute_error(true_vals, pred_vals)
-        rmse = np.sqrt(mean_squared_error(true_vals, pred_vals))
-        mape = np.mean(np.abs((true_vals - pred_vals) / (true_vals + 1e-8))) * 100
-
-        metrics_data.append({
-            "Window": w + 1,
-            "Context Length": current_ctx,
-            "MAE": mae,
-            "RMSE": rmse,
-            "MAPE (%)": mape
-        })
-
-    import matplotlib.dates as mdates
-    fig_all, axes = plt.subplots(windows, 1, figsize=(12, 3 * windows))
-    if windows == 1:
-        axes = [axes]
-
-    for idx, ax in enumerate(axes):
-        # 当前窗口预测起始在整个df里的索引位置
-        window_start_idx = len(df) - test_len + idx * prediction_length
-
-        # 历史数据索引范围到预测结束
-        history_end_idx = window_start_idx + prediction_length
-        history_end_idx = min(history_end_idx, len(df))  # 防止越界
-
-        # 取完整历史真实数据（从头到预测结束）
-        time_all = df.index[:history_end_idx]
-        values_all = df.iloc[:history_end_idx, 0].values
-
-        # 预测期时间索引
-        pred_time = df.index[window_start_idx : window_start_idx + prediction_length]
-
-        # 预测均值
-        pred_mean = all_forecasts[idx].samples.mean(axis=0).squeeze()
-
-        # 画完整历史真实数据线（黑色实线）
-        ax.plot(time_all, values_all, label="Historical Data", color="black", linewidth=1.5)
-
-        # 画预测期预测均值线（蓝色实线）
-        ax.plot(pred_time, pred_mean, label="Forecast (mean)", color="blue", linewidth=2)
-
-        ax.set_title(f"Window {idx+1} Forecast with Full History")
-        ax.legend()
-        ax.grid(True)
-
-        # 设置x轴为日期格式
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-        ax.xaxis.set_major_locator(mdates.AutoDateLocator())
-
-        # 关键修改：单独旋转每个子图的x轴刻度标签
-        for label in ax.get_xticklabels():
-            label.set_rotation(45)
-            label.set_horizontalalignment('right')
-
-    # 不要在这里调用 fig_all.autofmt_xdate()
-    # 调整子图间垂直间距，防止重叠
-    fig_all.subplots_adjust(hspace=0.7)  # 这里0.5可以根据需求调整
-
-    st.subheader("All Expanding Windows Forecasts (Full History + Forecast)")
-    st.pyplot(fig_all)
-
-
-    # 侧边栏选择窗口，默认第1个窗口
-    selected_window = st.sidebar.selectbox(
-        "Select Window to View Forecast Data",
-        options=list(range(1, windows + 1)),
-        index=0
+    ax.fill_between(
+        forecast_df['ds'],
+        np.array(preds_all) - pred_std,
+        np.array(preds_all) + pred_std,
+        color="orange", alpha=0.2
     )
 
-    idx = selected_window - 1
-    df_window = pd.DataFrame({
-        "TimeStep": range(len(all_labels[idx])),
-        "True Value": all_labels[idx],
-        "Predicted Mean": all_forecasts[idx].samples.mean(axis=0).squeeze()
-    })
+    ax.set_title("Chronos Expanding Forecast (All Windows)")
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Value")
+    ax.legend()
+    ax.grid(True)
+    plt.xticks(rotation=45)
 
-    st.subheader(f"Forecast and True Values for Window {selected_window}")
-    st.dataframe(df_window)
+    st.pyplot(fig)
+
+    # -------------------------
+    # 下载 CSV
+    # -------------------------
+    import io
+    towrite = io.BytesIO()
+    forecast_df.to_csv(towrite, index=False, encoding="utf-8-sig")
+    towrite.seek(0)
+    st.download_button(
+        "Download Chronos Expanding predictions CSV",
+        towrite,
+        file_name="chronos_expanding_preds.csv",
+        mime="text/csv"
+    )
+
+# ----------------------------
+# Multi-model Forecast Comparison branch
+# ----------------------------
+elif model_choice == "Multi-model Forecast Comparison":
+    st.write("### Multi-model Forecast Comparison")
+
+    from Chronos import run_chronos_forecast
+    from Chronos_expanding import run_chronos_expanding_forecast
+    from autoarima_forecast import run_autoarima_forecast
+    from autoarima_expanding import run_autoarima_expanding_forecast
+    from sample_moirai import run_moirai_expanding_forecast  # Moirai expanding
+
+    metrics_list = []
+    forecast_dict = {}
+
+    # ============ Chronos ============
+    try:
+        forecast_df, _ = run_chronos_forecast(
+            df,
+            series_col=None,
+            prediction_length=prediction_length,
+            test_len=test_len,
+            model_name=chronos_model_name,
+            device=None,
+        )
+        y_true = forecast_df["true"].values if "true" in forecast_df else df.iloc[-len(forecast_df):,0].values
+        y_pred = forecast_df["chronos"].values if "chronos" in forecast_df else forecast_df.iloc[:,1].values
+        mae = mean_absolute_error(y_true, y_pred)
+        rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+        mape = np.mean(np.abs((y_true - y_pred) / (y_true + 1e-8))) * 100
+        smape = 100 * np.mean(2 * np.abs(y_pred - y_true) / (np.abs(y_pred) + np.abs(y_true) + 1e-8))
+        metrics_list.append({"Model": "Chronos", "MAE": mae, "RMSE": rmse, "MAPE": mape, "sMAPE": smape})
+        forecast_dict["Chronos"] = (forecast_df["ds"], y_pred)
+    except Exception as e:
+        st.error(f"Chronos failed: {e}")
+
+    # ============ Chronos-expanding ============
+    try:
+        metrics, forecast_df, meta = run_chronos_expanding_forecast(
+            df,
+            series_col=None,
+            prediction_length=prediction_length,
+            initial_train=initial_context_length,
+            step=prediction_length,
+            model_name=chronos_model_name,
+            device=None,
+        )
+        mae, rmse, mape = metrics["MAE"], metrics["RMSE"], metrics["MAPE (%)"]
+        smape = 100 * np.mean(2 * np.abs(forecast_df["chronos_expanding"].values - forecast_df["true"].values) /
+                             (np.abs(forecast_df["chronos_expanding"].values) + np.abs(forecast_df["true"].values) + 1e-8))
+        metrics_list.append({"Model": "Chronos-expanding", "MAE": mae, "RMSE": rmse, "MAPE": mape, "sMAPE": smape})
+        forecast_dict["Chronos-expanding"] = (forecast_df["ds"], forecast_df["chronos_expanding"].values)
+    except Exception as e:
+        st.error(f"Chronos-expanding failed: {e}")
+
+    # ============ AutoARIMA ============
+    try:
+        forecast_df, _ = run_autoarima_forecast(
+            df,
+            series_col=None,
+            prediction_length=prediction_length,
+            test_len=test_len,
+        )
+        y_true = forecast_df["true"].values if "true" in forecast_df else df.iloc[-len(forecast_df):,0].values
+        y_pred = forecast_df["autoarima"].values if "autoarima" in forecast_df else forecast_df.iloc[:,1].values
+        mae = mean_absolute_error(y_true, y_pred)
+        rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+        mape = np.mean(np.abs((y_true - y_pred) / (y_true + 1e-8))) * 100
+        smape = 100 * np.mean(2 * np.abs(y_pred - y_true) / (np.abs(y_pred) + np.abs(y_true) + 1e-8))
+        metrics_list.append({"Model": "AutoARIMA", "MAE": mae, "RMSE": rmse, "MAPE": mape, "sMAPE": smape})
+        forecast_dict["AutoARIMA"] = (forecast_df["ds"], y_pred)
+    except Exception as e:
+        st.error(f"AutoARIMA failed: {e}")
+
+    # ============ AutoARIMA-expanding ============
+    try:
+        metrics, forecast_df, meta = run_autoarima_expanding_forecast(
+            df,
+            series_col=None,
+            prediction_length=prediction_length,
+            initial_train=initial_context_length,
+            step=prediction_length,
+            seasonal=False,
+            stepwise=True,
+            suppress_warnings=True,
+            error_action="ignore",
+            alpha=0.05,
+        )
+        mae, rmse, mape = metrics["MAE"], metrics["RMSE"], metrics["MAPE (%)"]
+        smape = 100 * np.mean(2 * np.abs(forecast_df["autoarima_expanding"].values - forecast_df["true"].values) /
+                             (np.abs(forecast_df["autoarima_expanding"].values) + np.abs(forecast_df["true"].values) + 1e-8))
+        metrics_list.append({"Model": "AutoARIMA-expanding", "MAE": mae, "RMSE": rmse, "MAPE": mape, "sMAPE": smape})
+        forecast_dict["AutoARIMA-expanding"] = (forecast_df["ds"], forecast_df["autoarima_expanding"].values)
+    except Exception as e:
+        st.error(f"AutoARIMA-expanding failed: {e}")
+
+    # ============ Moirai-expanding ============
+    try:
+        metrics, forecast_df, meta = run_moirai_expanding_forecast(
+            df,
+            model_choice="moirai",   # 或 "moirai-moe"
+            size_choice=size_choice,
+            prediction_length=prediction_length,
+            initial_train=initial_context_length,
+            max_context_length=max_context_length,
+            batch_size=batch_size,
+        )
+
+        # 计算指标
+        y_true = forecast_df["true"].values if "true" in forecast_df else df.iloc[-len(forecast_df):,0].values
+        preds_all = [np.mean(p, axis=0) for _, p, _ in meta]
+        y_pred = np.concatenate(preds_all)
+        # 对齐长度
+        if len(y_pred) < len(y_true):
+            y_pred = np.pad(y_pred, (len(y_true)-len(y_pred),0), mode='edge')
+        elif len(y_pred) > len(y_true):
+            y_pred = y_pred[-len(y_true):]
+
+        mae = mean_absolute_error(y_true, y_pred)
+        rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+        mape = np.mean(np.abs((y_true - y_pred) / (y_true + 1e-8))) * 100
+        smape = 100 * np.mean(2 * np.abs(y_pred - y_true) / (np.abs(y_pred) + np.abs(y_true) + 1e-8))
+
+        metrics_list.append({"Model": "Moirai-expanding", "MAE": mae, "RMSE": rmse, "MAPE": mape, "sMAPE": smape})
+        forecast_dict["Moirai-expanding"] = (forecast_df["ds"], y_pred)
+    except Exception as e:
+        st.error(f"Moirai-expanding failed: {e}")
+
+    # ============ 显示对比表 ============
+    if metrics_list:
+        st.subheader("Comparison of Forecasting Models")
+        results_df = pd.DataFrame(metrics_list).set_index("Model")
+        st.dataframe(results_df)
+
+    # ============ 绘制对比图 ============
+    if forecast_dict:
+        st.subheader("Forecast Comparison Plot")
+        fig, ax = plt.subplots(figsize=(12,6))
+        ax.plot(df.index, df.iloc[:,0].astype(float), label="Actual", color="black")
+
+        for name, (ds, y_pred) in forecast_dict.items():
+            ax.plot(ds, y_pred, label=name)
+
+        ax.legend()
+        ax.grid(True)
+        plt.xticks(rotation=45)
+        st.pyplot(fig)
 
 
-    # 显示误差指标表
-    st.subheader("Forecast Error Metrics by Window")
-    metrics_df = pd.DataFrame(metrics_data)
-    st.dataframe(metrics_df.style.format({
-        "MAE": "{:.4f}",
-        "RMSE": "{:.4f}",
-        "MAPE (%)": "{:.2f}"
-    }))
+
+# ----------------------------
+# Moirai / Moirai-MoE expanding window branch (Expanding-window style)
+# ----------------------------
+else:
+    st.write("### Moirai Expanding-Window Forecast")
+
+    from sample_moirai import run_moirai_expanding_forecast
+
+    with st.spinner("Running Moirai expanding-window evaluation..."):
+        metrics, forecast_df, meta = run_moirai_expanding_forecast(
+            df,
+            model_choice=model_choice,
+            size_choice=size_choice,
+            prediction_length=prediction_length,
+            initial_train=initial_context_length,
+            max_context_length=max_context_length,
+            batch_size=batch_size,
+        )
+
+    # 显示指标
+    st.subheader("Moirai Expanding Metrics")
+    st.json(metrics)
+
+    # 显示前50行预测值
+    st.subheader("Moirai Expanding Forecast Values (head)")
+    st.dataframe(forecast_df.head(50))
+
+    # 绘图
+    fig, ax = plt.subplots(figsize=(12,5))
+    ax.plot(df.index, df.iloc[:,0].astype(float), label="Actual", color="black")
+    preds_plot = [np.mean(p, axis=0) for _, p, _ in meta]
+    preds_plot = np.concatenate(preds_plot)
+    ax.plot(forecast_df['ds'], preds_plot, label="Moirai Expanding", color="blue")
+    # 阴影
+    all_preds = np.concatenate([p for _, p, _ in meta], axis=0)
+    pred_std = np.std(all_preds, axis=0)
+    if len(pred_std) < len(forecast_df):
+        pred_std = np.pad(pred_std, (0, len(forecast_df)-len(pred_std)), mode='edge')
+    elif len(pred_std) > len(forecast_df):
+        pred_std = pred_std[:len(forecast_df)]
+    ax.fill_between(forecast_df['ds'], preds_plot - pred_std, preds_plot + pred_std, color="blue", alpha=0.2)
+    ax.set_title("Moirai Expanding Forecast (All Windows)")
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Value")
+    ax.legend()
+    ax.grid(True)
+    plt.xticks(rotation=45)
+    st.pyplot(fig)
+
+    # 下载 CSV
+    towrite = io.BytesIO()
+    forecast_df.to_csv(towrite, index=False, encoding="utf-8-sig")
+    towrite.seek(0)
+    st.download_button(
+        "Download Moirai Expanding predictions CSV",
+        towrite,
+        file_name="moirai_expanding_preds.csv",
+        mime="text/csv"
+    )
+
+
+
 
 
 
