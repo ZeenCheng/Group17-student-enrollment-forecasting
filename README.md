@@ -26,7 +26,7 @@ The system includes both a **FastAPI backend with SQLite database** and a **Stre
 ├── autoarima_forecast.py    # Auto ARIMA forecasting
 ├── autoarima_expanding.py   # Auto ARIMA expanding-window forecasting
 ├── Chronos.py               # Chronos forecasting (standard)
-├── chronos_model.py               # Chronos forecasting (standard)
+├── chronos_model.py         # Chronos forecasting (standard)
 ├── Chronos_expanding.py     # Chronos expanding-window forecasting
 ├── ts_wide.csv              # Google Trends dataset
 ├── baidu_ts.csv             # Baidu Trends dataset
@@ -114,32 +114,24 @@ pip install chronos-forecasting pandas numpy scikit-learn
 
 ---
 
-### 5️⃣ Verify Installation
-```bash
-python -c "import torch, pandas, streamlit, gluonts; print('✅ All core modules loaded successfully!')"
-```
 
 ---
 
 ### 6️⃣ Run the Project
 #### Run FastAPI backend
 ```bash
-python main.py
+uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
-#### Or run Streamlit frontend
+#### then run Streamlit frontend(using another anaconda_prompt)
 ```bash
 streamlit run streamlit_app.py
 ```
-Then open [http://localhost:8501/](http://localhost:8501/) in your browser.  
-You can upload `ts_wide.csv` or `baidu_ts.csv` to start forecasting.
+[http://localhost:8501/](http://localhost:8501/).  
+You can upload `ts_wide.csv` , `baidu_ts.csv` or your local data(It must be formatted, you can check the ts_wide.csv given to make sure your data is ready to run) to start forecasting.
 
 ---
 
-### 💡 Optional: GPU Acceleration
-If your system supports CUDA:
-```bash
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-```
+
 
 ---
 
@@ -154,7 +146,7 @@ Both are in **wide-format** (each column = topic/keyword, each row = time point)
 
 ---
 
-## 👨‍💻 Author
+##  Author
 
 **Zeen Cheng**  
 Massey University  
@@ -163,4 +155,4 @@ GitHub: [@ZeenCheng](https://github.com/ZeenCheng)
 
 ---
 
-✅ *This README has been updated to reflect the final integrated version of the Student Enrollment Forecasting project — combining Moirai, Chronos, AutoARIMA, database backend, and Streamlit interface.*
+ *This README has been updated to reflect the final integrated version of the Student Enrollment Forecasting project — combining Moirai, Chronos, AutoARIMA, database backend, and Streamlit interface.*
