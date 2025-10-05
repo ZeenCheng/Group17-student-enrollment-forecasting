@@ -93,12 +93,7 @@ This installs all standard packages including `FastAPI`, `Streamlit`, `Pandas`, 
 
 ---
 
-### 3️⃣ Install **Uni2TS (Moirai)**
-Used for Moirai and Moirai-MoE models (`sample_moirai.py`, `streamlit_app.py`):
-```bash
-pip install git+https://github.com/microsoft/uni2ts.git
-```
-If PyTorch compatibility issues occur, upgrade:
+### 3️⃣ Install **Torch**
 ```bash
 pip install torch --upgrade
 pip install streamlit pandas numpy matplotlib scikit-learn transformers torch
@@ -120,6 +115,7 @@ pip install chronos-forecasting pandas numpy scikit-learn
 ### 6️⃣ Run the Project
 #### Run FastAPI backend
 ```bash
+pip install uvicorn
 uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 #### then run Streamlit frontend(using another anaconda_prompt)
