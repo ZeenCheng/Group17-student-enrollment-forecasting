@@ -22,14 +22,15 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 # regex to extract floats from model text output
 FLOAT_RE = re.compile(r'[-+]?\d*\.\d+|[-+]?\d+')
 
+
 def _ensure_sentencepiece_installed():
     try:
         import sentencepiece  # noqa: F401
     except Exception as e:
         raise RuntimeError(
-            "需要安装 sentencepiece 才能加载某些 Chronos tokenizers。\n"
-            "请运行: pip install sentencepiece\n"
-            "另外建议安装: pip install protobuf\n"
+            "You must install 'sentencepiece' to load certain Chronos tokenizers.\n"
+            "Please run: pip install sentencepiece\n"
+            "It is also recommended to install: pip install protobuf\n"
         ) from e
 
 
@@ -44,10 +45,10 @@ def _coerce_model_name(model_name) -> str:
         m = str(model_name)
         # basic sanity: must contain at least one slash or be non-empty
         if not m:
-            raise ValueError("空字符串模型名")
+            raise ValueError("Model name cannot be an empty string.")
         return m
     except Exception as e:
-        raise TypeError(f"model_name 必须是字符串或可转换为字符串的对象，传入类型: {type(model_name)}") from e
+        raise TypeError(f"model_name must be a string or convertible to string, got type: {type(model_name)}") from e
 
 
 def load_chronos_model(model_name: str, device: Optional[str] = None):
@@ -74,7 +75,6 @@ def load_chronos_model(model_name: str, device: Optional[str] = None):
     tokenizer = None
     tokenizer_error = None
     try:
-        # try primary: AutoTokenizer (slow tokenizer) with trust_remote_code for custom tokenizers
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False, trust_remote_code=True)
     except Exception as e:
         tokenizer_error = e
@@ -82,32 +82,29 @@ def load_chronos_model(model_name: str, device: Optional[str] = None):
 
     if tokenizer is None:
         try:
-            # try T5Tokenizer fallback
             from transformers import T5Tokenizer
             tokenizer = T5Tokenizer.from_pretrained(model_name, use_fast=False)
         except Exception as e2:
             print(f"[chronos_model] T5Tokenizer fallback failed: {repr(e2)}")
-            # final fallback: try AutoTokenizer with trust_remote_code True and default settings (may raise)
             try:
                 tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
             except Exception as e3:
-                # raise informative error with chain
                 raise RuntimeError(
                     f"Failed to load tokenizer for '{model_name}'.\n"
                     f"Primary error: {tokenizer_error}\n"
                     f"Fallback1 (T5Tokenizer) error: {e2}\n"
                     f"Fallback2 error: {e3}\n\n"
-                    "常见问题与解决：\n"
-                    "- 请确保 model_name 为字符串，比如 'amazon/chronos-t5-small' 或本地模型目录路径。\n"
-                    "- 若模型使用 SentencePiece，请先运行: pip install sentencepiece protobuf\n"
-                    "- 若网络或权限问题，可先在本机下载模型到本地目录并将 model_name 指向该目录路径。\n"
+                    "Common issues and fixes:\n"
+                    "- Ensure model_name is a string, e.g., 'amazon/chronos-t5-small' or a valid local directory path.\n"
+                    "- If the model uses SentencePiece, run: pip install sentencepiece protobuf\n"
+                    "- If you have network or permission issues, download the model locally and set model_name to that path.\n"
                 ) from e3
 
     # Load model (seq2seq) - use trust_remote_code True for custom architectures if needed
     try:
         model = AutoModelForSeq2SeqLM.from_pretrained(model_name, trust_remote_code=True).to(device)
     except Exception as e:
-        raise RuntimeError(f"加载模型 '{model_name}' 失败: {e}") from e
+        raise RuntimeError(f"Failed to load model '{model_name}': {e}") from e
 
     return tokenizer, model, device
 
@@ -147,7 +144,6 @@ def predict_one_window(tokenizer, model, device, history: np.ndarray, pred_len: 
         outputs = model.generate(input_ids=input_ids, attention_mask=attention_mask,
                                  max_new_tokens=max(32, pred_len * 2), do_sample=False)
     except TypeError:
-        # fallback for older transformers versions
         try:
             outputs = model.generate(input_ids=input_ids, attention_mask=attention_mask,
                                      max_length=input_ids.shape[1] + pred_len * 2, do_sample=False)
@@ -191,19 +187,19 @@ def expanding_window_forecast(
     """
     # basic checks
     if df.shape[1] < 1:
-        raise ValueError("输入 df 必须至少包含一列目标值。")
+        raise ValueError("Input DataFrame must contain at least one target column.")
 
     series = df.iloc[:, 0].astype(float).values
     n = len(series)
     if not isinstance(prediction_length, int) or prediction_length <= 0:
-        raise ValueError("prediction_length 必须是正整数")
+        raise ValueError("prediction_length must be a positive integer.")
     if not isinstance(initial_train, int) or initial_train <= 0:
-        raise ValueError("initial_train 必须是正整数")
+        raise ValueError("initial_train must be a positive integer.")
     if not isinstance(step, int) or step <= 0:
-        raise ValueError("step 必须是正整数")
+        raise ValueError("step must be a positive integer.")
 
     if initial_train >= n - prediction_length:
-        raise ValueError("initial_train 太大，无法产生至少一个预测窗口。")
+        raise ValueError("initial_train too large — cannot produce at least one forecast window.")
 
     # coerce model_name to str (help avoid 'not a string' errors)
     model_name = _coerce_model_name(model_name)
