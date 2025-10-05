@@ -1,4 +1,4 @@
-# 🎓 Student Enrollment Forecasting (Moirai, Chronos, Auto Models & Streamlit)
+# Student Enrollment Forecasting (Moirai, Chronos, Auto Models & Streamlit)
 
 This project forecasts **student enrollment trends** using **state-of-the-art time series forecasting models** integrated into an interactive web application.  
 It combines **Moirai**, **Chronos**, and **Auto ARIMA** (with expanding-window evaluations) to model complex multi-source time series data such as **Google Trends** and **Baidu Trends**.  
@@ -26,6 +26,7 @@ The system includes both a **FastAPI backend with SQLite database** and a **Stre
 ├── autoarima_forecast.py    # Auto ARIMA forecasting
 ├── autoarima_expanding.py   # Auto ARIMA expanding-window forecasting
 ├── Chronos.py               # Chronos forecasting (standard)
+├── chronos_model.py               # Chronos forecasting (standard)
 ├── Chronos_expanding.py     # Chronos expanding-window forecasting
 ├── ts_wide.csv              # Google Trends dataset
 ├── baidu_ts.csv             # Baidu Trends dataset
@@ -41,7 +42,7 @@ The system includes both a **FastAPI backend with SQLite database** and a **Stre
 | Model | Description | File |
 |-------|--------------|------|
 | **Moirai** | Foundation model for time series (from Microsoft Uni2TS) | `sample_moirai.py` |
-| **Chronos** | Transformer-based forecasting model | `Chronos.py` |
+| **chronos** | Transformer-based forecasting model | `chronos_model.py` |
 | **Chronos Expanding** | Expanding-window evaluation of Chronos | `Chronos_expanding.py` |
 | **Auto ARIMA** | Classical statistical forecasting model | `autoarima_forecast.py` |
 | **Auto ARIMA Expanding** | Expanding-window evaluation version | `autoarima_expanding.py` |
@@ -85,6 +86,8 @@ conda activate enrollment_forecast
 ### 2️⃣ Install Core Dependencies
 ```bash
 pip install -r requirements.txt
+pip install fastapi[all]
+pip install pmdarima
 ```
 This installs all standard packages including `FastAPI`, `Streamlit`, `Pandas`, `Torch`, and others.
 
@@ -98,6 +101,7 @@ pip install git+https://github.com/microsoft/uni2ts.git
 If PyTorch compatibility issues occur, upgrade:
 ```bash
 pip install torch --upgrade
+pip install streamlit pandas numpy matplotlib scikit-learn transformers torch
 ```
 
 ---
@@ -105,12 +109,7 @@ pip install torch --upgrade
 ### 4️⃣ Install **Chronos**
 Used for Chronos and Chronos Expanding models:
 ```bash
-pip install git+https://github.com/microsoft/Chronos.git
-```
-If installation is slow (e.g., in China):
-```bash
-git clone https://ghproxy.com/https://github.com/microsoft/Chronos.git
-pip install ./Chronos
+pip install chronos-forecasting pandas numpy scikit-learn
 ```
 
 ---
