@@ -25,30 +25,30 @@ def run_chronos_expanding_forecast(
     Parameters
     ----------
     df : DataFrame
-        DatetimeIndex, 第一列为目标序列 (或用 series_col 指定列)。
+        DatetimeIndex, first column as the target series.
     series_col : str|int|None
-        预测的列名/列序号。None 则用第一列。
+        The column name/index to forecast. If None, use the first column.
     prediction_length : int
-        每个窗口的预测步长。
+        Forecast horizon for each window.
     initial_train : int
-        第一个窗口的训练长度。
+        Training size of the first window.
     step : int
-        窗口步长（通常等于 prediction_length）。
+        Window step size (usually equal to prediction_length).
     model_name : str
-        Chronos 预训练模型名称。
+        Chronos pre-trained model name.
     device : str
-        "cuda" 或 "cpu"，None 自动检测。
+        "cuda" or "cpu". If None, auto-detect.
 
     Returns
     -------
     metrics : dict
         {"MAE": ..., "RMSE": ..., "MAPE (%)": ...}
     forecast_df : DataFrame
-        列为 ["ds", "chronos_expanding", "true"]，拼接所有窗口的预测与真实。
+        Columns ["ds", "chronos_expanding", "true"], concatenating predictions and truths.
     meta : list of tuples
-        [(window_start_index, pred_array, true_array), ...] 用于绘图/调试。
+        [(window_start_index, pred_array, true_array), ...] for plotting/debugging.
     """
-    # 选列
+    # Select column
     if series_col is None:
         series = df.iloc[:, 0].copy()
         colname = df.columns[0]
@@ -56,7 +56,7 @@ def run_chronos_expanding_forecast(
         series = df[series_col].copy()
         colname = series_col
 
-    # 确保是 DatetimeIndex
+    # Ensure DatetimeIndex
     if not isinstance(series.index, pd.DatetimeIndex):
         series.index = pd.to_datetime(series.index)
 
@@ -64,11 +64,11 @@ def run_chronos_expanding_forecast(
     if initial_train >= n:
         raise ValueError("initial_train must be smaller than the length of series.")
 
-    # 设备
+    # Device setup
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # 加载 Chronos
+    # Load Chronos
     pipeline = ChronosPipeline.from_pretrained(
         model_name,
         device_map=device,
@@ -77,22 +77,21 @@ def run_chronos_expanding_forecast(
 
     preds_all = []
     trues_all = []
-    ds_all = []      # 收集每个窗口真实值对应的时间索引
+    ds_all = []      # Collect datetime indices of true values from each window
     meta = []
 
-    # 扩窗循环
+    # Expanding-window loop
     for w_start in range(initial_train, n - prediction_length + 1, step):
         train_slice = series.iloc[:w_start]
         true_slice = series.iloc[w_start: w_start + prediction_length]
 
         context = torch.tensor(train_slice.values, dtype=torch.float32)
 
-        # 预测
+        # Forecast
         forecast = pipeline.predict(context, prediction_length=prediction_length)  # [1, num_samples, pred_len]
         forecast_array = forecast[0].numpy()  # shape [num_samples, pred_len]
-        pred_mean = np.mean(forecast_array, axis=0)   # 连续曲线
-        pred_std  = np.std(forecast_array, axis=0)    # 可用于阴影表示不确定性
-
+        pred_mean = np.mean(forecast_array, axis=0)   # Mean forecast curve
+        pred_std  = np.std(forecast_array, axis=0)    # Uncertainty band (std dev)
 
         preds_all.extend(pred_mean.tolist())
         trues_all.extend(true_slice.values.tolist())
@@ -102,7 +101,7 @@ def run_chronos_expanding_forecast(
     preds_all = np.asarray(preds_all, dtype=float)
     trues_all = np.asarray(trues_all, dtype=float)
 
-    # 误差指标（兼容旧版 sklearn：不用 squared 参数）
+    # Error metrics
     mae = float(mean_absolute_error(trues_all, preds_all))
     rmse = float(np.sqrt(mean_squared_error(trues_all, preds_all)))
     mape = float(np.mean(np.abs((trues_all - preds_all) / (trues_all + 1e-8))) * 100.0)
@@ -144,4 +143,5 @@ if __name__ == "__main__":
     )
     print("Metrics:", metrics_cli)
     print(forecast_df_cli.head())
+
 

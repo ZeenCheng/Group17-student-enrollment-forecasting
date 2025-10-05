@@ -28,33 +28,33 @@ def run_moirai_expanding_forecast(
     Parameters
     ----------
     df : pd.DataFrame
-        DatetimeIndex, 第一列为目标序列。
+        DatetimeIndex, the first column is the target time series.
     model_choice : str
-        "moirai" 或 "moirai-moe"
+        Either "moirai" or "moirai-moe".
     size_choice : str
-        模型大小：small/base/large
+        Model size: small / base / large.
     prediction_length : int
-        每个窗口的预测步长
+        Forecast horizon for each window.
     initial_train : int
-        第一个窗口的训练长度
+        Training length for the first window.
     max_context_length : int
-        最大上下文长度
+        Maximum context length.
     batch_size : int
-        Predictor batch size
+        Predictor batch size.
 
     Returns
     -------
     metrics : dict
         {"MAE": ..., "RMSE": ..., "MAPE (%)": ...}
     forecast_df : pd.DataFrame
-        ["ds", "moirai_expanding", "true"]，拼接所有窗口预测
+        ["ds", "moirai_expanding", "true"], concatenated predictions across windows.
     meta : list of tuples
-        [(window_start_index, forecast_samples, true_array), ...] 用于绘图
+        [(window_start_index, forecast_samples, true_array), ...] used for plotting.
     """
-    # 转换成 PandasDataset
+    # Convert to PandasDataset
     ds = PandasDataset(dict(df))
 
-    # 加载模型
+    # Load model
     if model_choice == "moirai":
         model = MoiraiForecast(
             module=MoiraiModule.from_pretrained(f"Salesforce/moirai-1.1-R-{size_choice}"),
@@ -96,6 +96,7 @@ def run_moirai_expanding_forecast(
             continue
         input_data, label_data = instances[0]
 
+        # Adjust context length dynamically
         current_ctx = min(initial_train + (w_start - initial_train), max_context_length)
         if "past_target" in input_data:
             input_data["past_target"] = input_data["past_target"][-current_ctx:]
@@ -114,7 +115,13 @@ def run_moirai_expanding_forecast(
         mae = mean_absolute_error(true_vals, pred_mean)
         rmse = np.sqrt(mean_squared_error(true_vals, pred_mean))
         mape = np.mean(np.abs((true_vals - pred_mean) / (true_vals + 1e-8))) * 100
-        metrics_data.append({"Window Start": w_start, "Context Length": current_ctx, "MAE": mae, "RMSE": rmse, "MAPE (%)": mape})
+        metrics_data.append({
+            "Window Start": w_start,
+            "Context Length": current_ctx,
+            "MAE": mae,
+            "RMSE": rmse,
+            "MAPE (%)": mape
+        })
 
     preds_all = np.array(preds_all)
     trues_all = np.array(trues_all)
@@ -145,5 +152,6 @@ if __name__ == "__main__":
     )
     print("Metrics:", metrics_cli)
     print(forecast_df_cli.head())
+
 
 

@@ -2,11 +2,11 @@
 """
 Expanding-window AutoARIMA forecasting helper.
 
-返回：
+Returns:
 - metrics: {"MAE": ..., "RMSE": ..., "MAPE (%)": ...}
-- forecast_df: 列 ["ds", "autoarima_expanding", "true"]
+- forecast_df: columns ["ds", "autoarima_expanding", "true"]
 - meta: [(w_start, pred_mean (np.array[pred_len]), pred_std (np.array[pred_len]), true_vals (np.array[pred_len]))]
-  用于在前端绘图（均值曲线 + 阴影）
+  Used for frontend plotting (mean curve + confidence interval shading).
 """
 
 import numpy as np
@@ -29,9 +29,9 @@ def run_autoarima_expanding_forecast(
     stepwise: bool = True,
     suppress_warnings: bool = True,
     error_action: str = "ignore",
-    alpha: float = 0.05,  # 置信区间 (1 - alpha)，默认 95%
+    alpha: float = 0.05,  # Confidence interval (1 - alpha), default 95%
 ):
-    # 选择列
+    # Select series column
     if series_col is None:
         series = df.iloc[:, 0].copy()
         colname = df.columns[0]
@@ -39,7 +39,7 @@ def run_autoarima_expanding_forecast(
         series = df[series_col].copy()
         colname = series_col
 
-    # 时间索引
+    # Ensure datetime index
     if not isinstance(series.index, pd.DatetimeIndex):
         series.index = pd.to_datetime(series.index)
 
@@ -54,16 +54,16 @@ def run_autoarima_expanding_forecast(
     ds_all = []
     meta = []
 
-    # 正态近似下，95%CI ≈ mean ± 1.96*std
-    # 通用 z 值：z = 1.96 对应 alpha=0.05
-    z = 1.96 if abs(alpha - 0.05) < 1e-6 else 1.96  # 简化：统一按 1.96 处理
+    # Normal approximation for 95% CI ≈ mean ± 1.96*std
+    # General z value: z = 1.96 corresponds to alpha = 0.05
+    z = 1.96 if abs(alpha - 0.05) < 1e-6 else 1.96  # Simplified: always use 1.96
 
-    # 扩窗循环
+    # Expanding-window loop
     for w_start in range(initial_train, n - prediction_length + 1, step):
         train_slice = series.iloc[:w_start]
         true_slice = series.iloc[w_start: w_start + prediction_length]
 
-        # 拟合 AutoARIMA
+        # Fit AutoARIMA model
         model = auto_arima(
             train_slice,
             seasonal=seasonal,
@@ -72,13 +72,13 @@ def run_autoarima_expanding_forecast(
             error_action=error_action,
         )
 
-        # 预测 + 置信区间
+        # Forecast + confidence intervals
         out = model.predict(n_periods=prediction_length, return_conf_int=True, alpha=alpha)
         if isinstance(out, tuple):
-            # 新版 pmdarima：返回 (y_pred, conf_int)
+            # Newer versions of pmdarima: returns (y_pred, conf_int)
             y_pred, conf_int = out
         else:
-            # 保险处理（几乎不会走到）
+            # Fallback handling (rarely used)
             y_pred = out
             conf_int = None
 
@@ -87,10 +87,10 @@ def run_autoarima_expanding_forecast(
             # conf_int: shape [pred_len, 2] -> [lower, upper]
             lower = conf_int[:, 0].astype(float)
             upper = conf_int[:, 1].astype(float)
-            # std 近似： (upper - lower) / (2*z)
+            # Approximate std: (upper - lower) / (2*z)
             pred_std = (upper - lower) / (2.0 * z)
         else:
-            # 没有 CI 时，给一个很小的 std，保证可以画阴影
+            # If no CI available, use a very small std to allow plotting shaded region
             pred_std = np.full_like(y_pred, 1e-8, dtype=float)
 
         true_vals = true_slice.values.astype(float)
@@ -104,7 +104,7 @@ def run_autoarima_expanding_forecast(
     preds_all = np.asarray(preds_all, dtype=float)
     trues_all = np.asarray(trues_all, dtype=float)
 
-    # 指标
+    # Metrics
     mae = float(mean_absolute_error(trues_all, preds_all))
     rmse = float(np.sqrt(mean_squared_error(trues_all, preds_all)))
     mape = float(np.mean(np.abs((trues_all - preds_all) / (trues_all + 1e-8))) * 100.0)
@@ -142,4 +142,5 @@ if __name__ == "__main__":
     )
     print("Metrics:", metrics_cli)
     print(forecast_df_cli.head())
+
 

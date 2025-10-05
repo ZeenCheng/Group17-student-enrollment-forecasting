@@ -1,0 +1,12 @@
+# Core libraries
+pandas
+numpy
+matplotlib
+scikit-learn
+plotly
+tqdm
+
+# Moirai from GitHub
+git+https://github.com/SalesforceAIResearch/uni2ts.git
+
+
