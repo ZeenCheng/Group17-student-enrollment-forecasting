@@ -39,7 +39,7 @@ max_context_length = st.sidebar.slider("Max Context Length", 20, 500, 200)
 batch_size = st.sidebar.slider("Batch Size", 1, 64, 32)
 test_len = st.sidebar.slider("Test Set Length", 20, 200, 100)
 
-chronos_model_name = st.sidebar.selectbox("Chronos model", ["amazon/chronos-t5-small", "amazon/chronos-bolt-small"])
+# chronos_model_name = st.sidebar.selectbox("Chronos model", ["amazon/chronos-t5-small", "amazon/chronos-bolt-small"])
 
 data_choice = st.sidebar.selectbox("Select Data Source", ["Google Trends", "Baidu Trends", "Local CSV"])
 uploaded_file = None
