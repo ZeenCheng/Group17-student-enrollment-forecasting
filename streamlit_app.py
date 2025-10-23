@@ -40,6 +40,7 @@ batch_size = st.sidebar.slider("Batch Size", 1, 64, 32)
 test_len = st.sidebar.slider("Test Set Length", 20, 200, 100)
 
 # chronos_model_name = st.sidebar.selectbox("Chronos model", ["amazon/chronos-t5-small", "amazon/chronos-bolt-small"])
+chronos_model_name = "amazon/chronos-t5-small"  # small
 
 data_choice = st.sidebar.selectbox("Select Data Source", ["Google Trends", "Baidu Trends", "Local CSV"])
 uploaded_file = None
@@ -365,14 +366,53 @@ elif model_choice == "Chronos":
         result = res.json()
 
         # Parsing backend returns
-        metrics = result.get("metrics", {})
+        metrics_from_api = result.get("metrics") or {}  # <-- define safely
         forecast_df = pd.DataFrame(result["predictions"])
-        forecast_df["ds"] = pd.to_datetime(forecast_df["ds"])
+        forecast_df["ds"] = pd.to_datetime(forecast_df["ds"], errors="coerce")
+
+        if "chronos" in forecast_df.columns:
+            pred_series = pd.to_numeric(forecast_df["chronos"], errors="coerce")
+        else:
+            # generic fallback: pick the first numeric column
+            numeric_cols = forecast_df.select_dtypes(include=[np.number]).columns.tolist()
+            if len(numeric_cols) == 0:
+                st.error("Chronos. The returned data does not contain a numeric column, so the metric cannot be calculated.")
+                st.stop()
+            pred_series = pd.to_numeric(forecast_df[numeric_cols[0]], errors="coerce")
+
+        # Align prediction with ground truth on the overlapping tail
+        pred_series.index = forecast_df["ds"]
+        df = df.sort_index()
+        true_series_full = df.iloc[:, 0].astype(float)
+
+        true_tail = true_series_full.iloc[-test_len:]
+        common_idx = true_tail.index.intersection(pred_series.index)
+
+        y_true = true_tail.loc[common_idx].values.astype(float)
+        y_pred = pred_series.loc[common_idx].values.astype(float)
+
+        # Compute metrics on the frontend to match other models
+        try:
+            mae = mean_absolute_error(y_true, y_pred)
+            rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+            mape = float(np.mean(np.abs((y_true - y_pred) / (y_true + 1e-8))) * 100.0)
+        except Exception as e:
+            st.warning(f"Chronos metric computation failed: {e}")
+            mae = rmse = mape = None
+
+        metrics_local = {
+            "MAE": mae,
+            "RMSE": rmse,
+            "MAPE (%)": mape
+        }
+
+        # Merge with backend metrics if provided (frontend values take precedence)
+        metrics = {**metrics_from_api, **metrics_local}
 
         # -------------------
         # Display metrics
         # -------------------
-        st.subheader("Chronos Forecast Metrics (from FastAPI)")
+        st.subheader("Chronos Forecast Metrics (computed on frontend)")
         st.json(metrics)
 
         # -------------------
@@ -386,14 +426,14 @@ elif model_choice == "Chronos":
         # -------------------
         fig, ax = plt.subplots(figsize=(12,5))
 
-        # True value
+        # Actual
         ax.plot(df.index, df.iloc[:,0].astype(float).values, label="Actual", color="black")
 
-        # Predicted value
+        # Predicted
         preds = forecast_df["chronos"].values if "chronos" in forecast_df.columns else forecast_df.iloc[:,1].values
         ax.plot(forecast_df["ds"], preds, label="Chronos Forecast", color="orange")
 
-        # Add a simple uncertainty shadow
+        # Uncertainty shadow if available
         if "std" in forecast_df.columns:
             ax.fill_between(forecast_df["ds"], preds - forecast_df["std"], preds + forecast_df["std"],
                             color="orange", alpha=0.2)
@@ -421,6 +461,7 @@ elif model_choice == "Chronos":
         )
     else:
         st.error(f"FastAPI request failed: {res.text}")
+
 
 # ----------------------------
 # Chronos-expanding branch
@@ -509,6 +550,7 @@ elif model_choice == "Multi-model Forecast Comparison":
     import matplotlib.pyplot as plt
     from sklearn.metrics import mean_absolute_error, mean_squared_error
     import time
+    import math  # for isnan on python floats
 
     # csv_path already prepared above (either temp_uploaded.csv or standard files)
     if uploaded_file is not None:
@@ -539,6 +581,20 @@ elif model_choice == "Multi-model Forecast Comparison":
 
     # Choose a per-model timeout (seconds).
     PER_MODEL_TIMEOUT = 120
+
+    # helper: ensure python-native float or np.nan (avoid numpy.float32/dtypes leaking to front-end)
+    def _to_py_float(x):
+        try:
+            if x is None:
+                return np.nan
+            # convert numpy scalars to python float
+            val = float(x)
+            # guard against nan/inf
+            if math.isnan(val) or math.isinf(val):
+                return np.nan
+            return val
+        except Exception:
+            return np.nan
 
     for model_name, endpoint in models_api.items():
         idx += 1
@@ -586,7 +642,7 @@ elif model_choice == "Multi-model Forecast Comparison":
                 st.warning(f"{model_name} returned predictions without 'ds' column, skipping.")
                 continue
             forecast_df["ds"] = pd.to_datetime(forecast_df["ds"], errors="coerce")
-            forecast_df = forecast_df.dropna(subset=["ds"])  # remove invalid dates
+            forecast_df = forecast_df.dropna(subset=["ds"])
             if forecast_df.empty:
                 st.warning(f"{model_name} produced no valid date entries after parsing 'ds'.")
                 continue
@@ -606,7 +662,8 @@ elif model_choice == "Multi-model Forecast Comparison":
 
             # take last n rows for alignment
             forecast_df_al = forecast_df.tail(n).reset_index(drop=True)
-            y_true = df.iloc[-n:, 0].astype(float).values
+            # ensure strictly one-dimensional numpy arrays of python floats
+            y_true = df.iloc[-n:, 0].astype(float).values.astype(float)
 
             # pick prediction column based on model
             if model_name == "Chronos":
@@ -614,7 +671,13 @@ elif model_choice == "Multi-model Forecast Comparison":
                     y_pred = forecast_df_al["chronos"].astype(float).values
                 else:
                     # fallback to second column if named differently
-                    y_pred = forecast_df_al.iloc[:, 1].astype(float).values
+                    # filter numeric columns only and take the first
+                    numeric_cols = forecast_df_al.select_dtypes(include=[np.number]).columns.tolist()
+                    if len(numeric_cols) >= 1:
+                        y_pred = forecast_df_al[numeric_cols[0]].astype(float).values
+                    else:
+                        st.warning(f"{model_name}: no numeric prediction column found, skipping.")
+                        continue
             elif model_name == "Chronos-expanding":
                 y_pred = forecast_df_al["chronos_expanding"].astype(float).values
             elif model_name == "AutoARIMA":
@@ -639,9 +702,8 @@ elif model_choice == "Multi-model Forecast Comparison":
                 if len(y_pred) == 0:
                     st.warning(f"{model_name} returned empty numeric predictions after selection.")
                     continue
-                # pad with last value (conservative)
                 pad = n - len(y_pred)
-                y_pred = np.pad(y_pred, (pad, 0), mode="edge")
+                y_pred = np.pad(y_pred.astype(float), (pad, 0), mode="edge")
 
             # Calculate metrics (defensive: catch exceptions)
             try:
@@ -651,11 +713,22 @@ elif model_choice == "Multi-model Forecast Comparison":
                 smape = 100 * np.mean(2 * np.abs(y_pred - y_true) / (np.abs(y_pred) + np.abs(y_true) + 1e-8))
             except Exception as e:
                 st.warning(f"{model_name} metric computation failed: {e}")
-                mae = rmse = mape = smape = None
+                mae = rmse = mape = smape = np.nan
 
-            metrics_list.append({"Model": model_name, "MAE": mae, "RMSE": rmse, "MAPE": mape, "sMAPE": smape})
+            # sanitize to python floats to avoid front-end type issues
+            metrics_list.append({
+                "Model": model_name,
+                "MAE": _to_py_float(mae),
+                "RMSE": _to_py_float(rmse),
+                "MAPE": _to_py_float(mape),
+                "sMAPE": _to_py_float(smape),
+                "Elapsed (s)": _to_py_float(elapsed)
+            })
+
             # Stores ds/y_pred (the tail aligned with y_true) for comparison plots.
-            forecast_dict[model_name] = (forecast_df_al["ds"].values, y_pred)
+            # Use numpy arrays of python floats and plain datetime64[ns]
+            ds_vals = pd.to_datetime(forecast_df_al["ds"]).values
+            forecast_dict[model_name] = (ds_vals, y_pred.astype(float))
 
             st.write(f"✔ {model_name} finished in {elapsed:.1f}s (aligned n={n}).")
 
@@ -665,12 +738,20 @@ elif model_choice == "Multi-model Forecast Comparison":
             st.warning(f"{model_name} request failed: {e}")
 
     prog.progress(1.0)
+    prog.empty()  # remove the progress bar to reduce front-end noise
 
-    # Display comparison table
+    # Display comparison table (keep it simple: no special index to avoid JS grid config issues)
     if metrics_list:
         st.subheader("Comparison of Forecasting Models")
-        results_df = pd.DataFrame(metrics_list).set_index("Model")
-        st.dataframe(results_df)
+        results_df = pd.DataFrame(metrics_list)
+        # round to 4 decimals for readability
+        for c in ["MAE", "RMSE", "MAPE", "sMAPE", "Elapsed (s)"]:
+            if c in results_df.columns:
+                results_df[c] = results_df[c].astype(float).round(4)
+        # stable column order
+        col_order = [c for c in ["Model", "MAE", "RMSE", "MAPE", "sMAPE", "Elapsed (s)"] if c in results_df.columns]
+        results_df = results_df[col_order]
+        st.dataframe(results_df, use_container_width=True)
 
     # ============ Draw a comparison chart ============
     if forecast_dict:
@@ -687,6 +768,7 @@ elif model_choice == "Multi-model Forecast Comparison":
         ax.grid(True)
         plt.xticks(rotation=45)
         st.pyplot(fig)
+
 
 # ----------------------------
 # Moirai / Moirai-MoE expanding window branch (via FastAPI backend)
