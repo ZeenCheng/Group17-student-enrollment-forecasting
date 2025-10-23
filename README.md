@@ -88,6 +88,8 @@ conda activate enrollment_forecast
 pip install -r requirements.txt
 pip install fastapi[all]
 pip install pmdarima
+pip install datasets einops gluonts matplotlib scikit-learn huggingface-hub
+pip install "gluonts[torch]~=0.14"
 ```
 This installs all standard packages including `FastAPI`, `Streamlit`, `Pandas`, `Torch`, and others.
 
